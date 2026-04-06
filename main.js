@@ -772,16 +772,10 @@ class Sureflap extends utils.Adapter {
                             this.setPetDrinkingToAdapter(`${prefix}.${petName}.water`, p);
                         }
                     } else {
-                        if (!this.warnings[PET_HOUSEHOLD_MISSING][p]) {
-                            this.log.warn(`could not get household for pet (${petName})`);
-                            this.warnings[PET_HOUSEHOLD_MISSING][p] = true;
-                        }
+                        this._warnOnce(PET_HOUSEHOLD_MISSING, p, `could not get household for pet (${petName})`);
                     }
                 } else {
-                    if (!this.warnings[PET_NAME_MISSING][p]) {
-                        this.log.warn(`no name found for pet with id '${this.pets[p].id}'.`);
-                        this.warnings[PET_NAME_MISSING][p] = true;
-                    }
+                    this._warnOnce(PET_NAME_MISSING, p, `no name found for pet with id '${this.pets[p].id}'.`);
                 }
             }
             if (this.config.unknown_movement_enable && this.updateHistory) {
@@ -1129,9 +1123,7 @@ class Sureflap extends utils.Adapter {
                         const objName = `${hierarchy}.control` + `.current_curfew`;
                         this.getCurfewFromAdapter(objName)
                             .then(curfew => {
-                                for (let h = 0; h < curfew.length; h++) {
-                                    curfew[h].enabled = false;
-                                }
+                                curfew.forEach(entry => (entry.enabled = false));
                                 this.log.debug(`setting curfew to: ${JSON.stringify(curfew)}`);
                                 curfew = this.convertCurfewLocalTimesToUtcTimes(curfew);
                                 if (DEVICE_TYPE_PET_FLAP === deviceType) {
@@ -1301,12 +1293,13 @@ class Sureflap extends utils.Adapter {
                     this.log.error(`could not set lock mode to adapter (${error})`);
                 }
             }
-            this.warnings[FLAP_LOCK_MODE_DATA_MISSING][deviceIndex] = false;
+            this.warnings[FLAP_LOCK_MODE_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
         } else {
-            if (!this.warnings[FLAP_LOCK_MODE_DATA_MISSING][deviceIndex]) {
-                this.log.warn(`no lock mode data found for flap '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[FLAP_LOCK_MODE_DATA_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                FLAP_LOCK_MODE_DATA_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no lock mode data found for flap '${this.devices[hid][deviceIndex].name}'.`,
+            );
         }
 
         // curfew
@@ -1358,12 +1351,13 @@ class Sureflap extends utils.Adapter {
                 this.curfewActivePrev = this.curfewActive;
             }
 
-            this.warnings[FLAP_CURFEW_DATA_MISSING][deviceIndex] = false;
+            this.warnings[FLAP_CURFEW_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
         } else {
-            if (!this.warnings[FLAP_CURFEW_DATA_MISSING][deviceIndex]) {
-                this.log.warn(`no curfew data found for flap '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[FLAP_CURFEW_DATA_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                FLAP_CURFEW_DATA_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no curfew data found for flap '${this.devices[hid][deviceIndex].name}'.`,
+            );
         }
 
         // pets assigned status
@@ -1439,12 +1433,13 @@ class Sureflap extends utils.Adapter {
                     }
                 }
 
-                this.warnings[CAT_FLAP_PET_TYPE_DATA_MISSING][deviceIndex] = false;
+                this.warnings[CAT_FLAP_PET_TYPE_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
             } else {
-                if (!this.warnings[CAT_FLAP_PET_TYPE_DATA_MISSING][deviceIndex]) {
-                    this.log.warn(`no pet type data found for cat flap '${this.devices[hid][deviceIndex].name}'.`);
-                    this.warnings[CAT_FLAP_PET_TYPE_DATA_MISSING][deviceIndex] = true;
-                }
+                this._warnOnce(
+                    CAT_FLAP_PET_TYPE_DATA_MISSING,
+                    `${hid}_${deviceIndex}`,
+                    `no pet type data found for cat flap '${this.devices[hid][deviceIndex].name}'.`,
+                );
             }
         }
     }
@@ -1473,14 +1468,15 @@ class Sureflap extends utils.Adapter {
                     this.devices[hid][deviceIndex].control.lid.close_delay,
                     true,
                 );
-                this.warnings[FEEDER_CLOSE_DELAY_DATA_MISSING][deviceIndex] = false;
+                this.warnings[FEEDER_CLOSE_DELAY_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
             }
-            this.warnings[FEEDER_CLOSE_DELAY_DATA_MISSING][deviceIndex] = false;
+            this.warnings[FEEDER_CLOSE_DELAY_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
         } else {
-            if (!this.warnings[FEEDER_CLOSE_DELAY_DATA_MISSING][deviceIndex]) {
-                this.log.warn(`no close delay setting found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[FEEDER_CLOSE_DELAY_DATA_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                FEEDER_CLOSE_DELAY_DATA_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no close delay setting found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         }
 
         // pets assigned status
@@ -1526,24 +1522,24 @@ class Sureflap extends utils.Adapter {
                                     true,
                                 );
                             }
-                            this.warnings[FEEDER_BOWL_CONFIG_ADAPTER_OBJECT_MISSING][deviceIndex] = false;
+                            this.warnings[FEEDER_BOWL_CONFIG_ADAPTER_OBJECT_MISSING][`${hid}_${deviceIndex}`] = false;
                         } else {
-                            if (!this.warnings[FEEDER_BOWL_CONFIG_ADAPTER_OBJECT_MISSING][deviceIndex]) {
-                                this.log.warn(
-                                    `got feeder config data for object '${`${objName}.bowls.${b}`}' but object does not exist. This can happen if number of bowls is changed and can be ignored.`,
-                                );
-                                this.warnings[FEEDER_BOWL_CONFIG_ADAPTER_OBJECT_MISSING][deviceIndex] = true;
-                            }
+                            this._warnOnce(
+                                FEEDER_BOWL_CONFIG_ADAPTER_OBJECT_MISSING,
+                                `${hid}_${deviceIndex}`,
+                                `got feeder config data for object '${objName}.bowls.${b}' but object does not exist. This can happen if number of bowls is changed and can be ignored.`,
+                            );
                         }
                     });
                 }
             }
-            this.warnings[FEEDER_BOWL_CONFIG_DATA_MISSING][deviceIndex] = false;
+            this.warnings[FEEDER_BOWL_CONFIG_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
         } else {
-            if (!this.warnings[FEEDER_BOWL_CONFIG_DATA_MISSING][deviceIndex]) {
-                this.log.warn(`no feeder config data found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[FEEDER_BOWL_CONFIG_DATA_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                FEEDER_BOWL_CONFIG_DATA_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no feeder config data found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         }
 
         // feeder remaining food data
@@ -1615,14 +1611,13 @@ class Sureflap extends utils.Adapter {
                                     true,
                                 );
                             }
-                            this.warnings[FEEDER_BOWL_STATUS_ADAPTER_OBJECT_MISSING][deviceIndex] = false;
+                            this.warnings[FEEDER_BOWL_STATUS_ADAPTER_OBJECT_MISSING][`${hid}_${deviceIndex}`] = false;
                         } else {
-                            if (!this.warnings[FEEDER_BOWL_STATUS_ADAPTER_OBJECT_MISSING][deviceIndex]) {
-                                this.log.warn(
-                                    `got feeder status data for object '${`${objName}.bowls.${b}`}' but object does not exist. This can happen if number of bowls is changed and can be ignored.`,
-                                );
-                                this.warnings[FEEDER_BOWL_STATUS_ADAPTER_OBJECT_MISSING][deviceIndex] = true;
-                            }
+                            this._warnOnce(
+                                FEEDER_BOWL_STATUS_ADAPTER_OBJECT_MISSING,
+                                `${hid}_${deviceIndex}`,
+                                `got feeder status data for object '${objName}.bowls.${b}' but object does not exist. This can happen if number of bowls is changed and can be ignored.`,
+                            );
                         }
                     });
                 }
@@ -1720,24 +1715,21 @@ class Sureflap extends utils.Adapter {
                                     },
                                 );
                             } else {
-                                if (!this.warnings[FEEDER_BOWL_REMAINING_FOOD_ADAPTER_OBJECT_MISSING][deviceIndex]) {
-                                    this.log.warn(
-                                        `got feeder remaining food data for object '${objName}.bowls.${lastDatapoint.weights[b].index}' (${b}) but object does not exist. This can happen if number of bowls is changed and can be ignored.`,
-                                    );
-                                    this.warnings[FEEDER_BOWL_REMAINING_FOOD_ADAPTER_OBJECT_MISSING][deviceIndex] =
-                                        true;
-                                }
+                                this._warnOnce(
+                                    FEEDER_BOWL_REMAINING_FOOD_ADAPTER_OBJECT_MISSING,
+                                    `${hid}_${deviceIndex}`,
+                                    `got feeder remaining food data for object '${objName}.bowls.${lastDatapoint.weights[b].index}' (${b}) but object does not exist. This can happen if number of bowls is changed and can be ignored.`,
+                                );
                             }
                         });
                     }
-                    this.warnings[FEEDER_BOWL_REMAINING_FOOD_DATA_MISSING][deviceIndex] = false;
+                    this.warnings[FEEDER_BOWL_REMAINING_FOOD_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
                 } else {
-                    if (!this.warnings[FEEDER_BOWL_REMAINING_FOOD_DATA_MISSING][deviceIndex]) {
-                        this.log.warn(
-                            `no remaining food data for feeder '${this.devices[hid][deviceIndex].name}' found`,
-                        );
-                        this.warnings[FEEDER_BOWL_REMAINING_FOOD_DATA_MISSING][deviceIndex] = true;
-                    }
+                    this._warnOnce(
+                        FEEDER_BOWL_REMAINING_FOOD_DATA_MISSING,
+                        `${hid}_${deviceIndex}`,
+                        `no remaining food data for feeder '${this.devices[hid][deviceIndex].name}' found`,
+                    );
                 }
             }
         }
@@ -1810,14 +1802,13 @@ class Sureflap extends utils.Adapter {
                                 true,
                             );
                         }
-                        this.warnings[DISPENSER_WATER_STATUS_ADAPTER_OBJECT_MISSING][deviceIndex] = false;
+                        this.warnings[DISPENSER_WATER_STATUS_ADAPTER_OBJECT_MISSING][`${hid}_${deviceIndex}`] = false;
                     } else {
-                        if (!this.warnings[DISPENSER_WATER_STATUS_ADAPTER_OBJECT_MISSING][deviceIndex]) {
-                            this.log.warn(
-                                `got remaining water data for object '${objName}.water' but object does not exist. This can happen if you newly added a water dispenser. In this case restart the adapter. If you did not add a water dispenser or if a restart does not help, contact developer.`,
-                            );
-                            this.warnings[DISPENSER_WATER_STATUS_ADAPTER_OBJECT_MISSING][deviceIndex] = true;
-                        }
+                        this._warnOnce(
+                            DISPENSER_WATER_STATUS_ADAPTER_OBJECT_MISSING,
+                            `${hid}_${deviceIndex}`,
+                            `got remaining water data for object '${objName}.water' but object does not exist. This can happen if you newly added a water dispenser. In this case restart the adapter. If you did not add a water dispenser or if a restart does not help, contact developer.`,
+                        );
                     }
                 });
             }
@@ -1872,42 +1863,40 @@ class Sureflap extends utils.Adapter {
                                         );
                                         this.setState(`${objName}.water.weight`, lastDatapoint.weights[0].weight, true);
                                     }
-                                    this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][deviceIndex] =
-                                        false;
+                                    this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][
+                                        `${hid}_${deviceIndex}`
+                                    ] = false;
                                 } else if (!err && obj == null) {
                                     this.log.debug(
                                         `setting remaining water for water dispenser '${this.devices[hid][deviceIndex].name}' with '${lastDatapoint.weights[0].weight}'.`,
                                     );
                                     this.setState(`${objName}.water.weight`, lastDatapoint.weights[0].weight, true);
-                                    this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][deviceIndex] =
-                                        false;
+                                    this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][
+                                        `${hid}_${deviceIndex}`
+                                    ] = false;
                                 } else {
-                                    if (!this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][deviceIndex]) {
-                                        this.log.warn(
-                                            `got remaining water data for object '${objName}.water' but object does not exist. This can happen if you newly added a water dispenser. In this case restart the adapter. If you did not add a water dispenser or if a restart does not help, contact developer.`,
-                                        );
-                                        this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][deviceIndex] =
-                                            true;
-                                    }
+                                    this._warnOnce(
+                                        DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING,
+                                        `${hid}_${deviceIndex}`,
+                                        `got remaining water data for object '${objName}.water' but object does not exist. This can happen if you newly added a water dispenser. In this case restart the adapter. If you did not add a water dispenser or if a restart does not help, contact developer.`,
+                                    );
                                 }
                             });
                         } else {
-                            if (!this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][deviceIndex]) {
-                                this.log.warn(
-                                    `got remaining water data for object '${objName}.water' but object does not exist. This can happen if you newly added a water dispenser. In this case restart the adapter. If you did not add a water dispenser or if a restart does not help, contact developer.`,
-                                );
-                                this.warnings[DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING][deviceIndex] = true;
-                            }
+                            this._warnOnce(
+                                DISPENSER_WATER_REMAINING_ADAPTER_OBJECT_MISSING,
+                                `${hid}_${deviceIndex}`,
+                                `got remaining water data for object '${objName}.water' but object does not exist. This can happen if you newly added a water dispenser. In this case restart the adapter. If you did not add a water dispenser or if a restart does not help, contact developer.`,
+                            );
                         }
                     });
-                    this.warnings[DISPENSER_WATER_REMAINING_DATA_MISSING][deviceIndex] = false;
+                    this.warnings[DISPENSER_WATER_REMAINING_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
                 } else {
-                    if (!this.warnings[DISPENSER_WATER_REMAINING_DATA_MISSING][deviceIndex]) {
-                        this.log.warn(
-                            `no remaining water data for water dispenser '${this.devices[hid][deviceIndex].name}' found`,
-                        );
-                        this.warnings[DISPENSER_WATER_REMAINING_DATA_MISSING][deviceIndex] = true;
-                    }
+                    this._warnOnce(
+                        DISPENSER_WATER_REMAINING_DATA_MISSING,
+                        `${hid}_${deviceIndex}`,
+                        `no remaining water data for water dispenser '${this.devices[hid][deviceIndex].name}' found`,
+                    );
                 }
             }
         }
@@ -1992,10 +1981,11 @@ class Sureflap extends utils.Adapter {
      */
     setBatteryStatusToAdapter(prefix, hierarchy, hid, deviceIndex) {
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.battery')) {
-            if (!this.warnings[DEVICE_BATTERY_DATA_MISSING][deviceIndex]) {
-                this.log.warn(`no battery data found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_BATTERY_DATA_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_BATTERY_DATA_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no battery data found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2005,14 +1995,15 @@ class Sureflap extends utils.Adapter {
                 const objName = `${prefix + hierarchy}.${this.devices[hid][deviceIndex].name}.` + `battery`;
                 this.setState(objName, this.devices[hid][deviceIndex].status.battery, true);
             }
-            this.warnings[DEVICE_BATTERY_DATA_MISSING][deviceIndex] = false;
+            this.warnings[DEVICE_BATTERY_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
         }
 
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.battery_percentage')) {
-            if (!this.warnings[DEVICE_BATTERY_PERCENTAGE_DATA_MISSING][deviceIndex]) {
-                this.log.warn(`no battery percentage data found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_BATTERY_PERCENTAGE_DATA_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_BATTERY_PERCENTAGE_DATA_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no battery percentage data found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2023,7 +2014,7 @@ class Sureflap extends utils.Adapter {
                 const objName = `${prefix + hierarchy}.${this.devices[hid][deviceIndex].name}.` + `battery_percentage`;
                 this.setState(objName, this.devices[hid][deviceIndex].status.battery_percentage, true);
             }
-            this.warnings[DEVICE_BATTERY_PERCENTAGE_DATA_MISSING][deviceIndex] = false;
+            this.warnings[DEVICE_BATTERY_PERCENTAGE_DATA_MISSING][`${hid}_${deviceIndex}`] = false;
         }
     }
 
@@ -2037,10 +2028,11 @@ class Sureflap extends utils.Adapter {
      */
     setSerialNumberToAdapter(prefix, hierarchy, hid, deviceIndex) {
         if (!this.devices[hid][deviceIndex].serial_number) {
-            if (!this.warnings[DEVICE_SERIAL_NUMBER_MISSING][deviceIndex]) {
-                this.log.warn(`no serial number found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_SERIAL_NUMBER_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_SERIAL_NUMBER_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no serial number found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2050,7 +2042,7 @@ class Sureflap extends utils.Adapter {
                 const objName = `${prefix + hierarchy}.${this.devices[hid][deviceIndex].name}.` + `serial_number`;
                 this.setState(objName, this.devices[hid][deviceIndex].serial_number, true);
             }
-            this.warnings[DEVICE_SERIAL_NUMBER_MISSING][deviceIndex] = false;
+            this.warnings[DEVICE_SERIAL_NUMBER_MISSING][`${hid}_${deviceIndex}`] = false;
         }
     }
 
@@ -2064,10 +2056,11 @@ class Sureflap extends utils.Adapter {
      */
     setSignalStrengthToAdapter(prefix, hierarchy, hid, deviceIndex) {
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.signal.device_rssi')) {
-            if (!this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][deviceIndex]) {
-                this.log.warn(`no device rssi found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_SIGNAL_STRENGTH_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no device rssi found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2079,14 +2072,15 @@ class Sureflap extends utils.Adapter {
                 this.setState(objName, this.devices[hid][deviceIndex].status.signal.device_rssi, true);
             }
             // API randomly does not return rssi -> do not reset warning until API is fixed or logs will be spammed
-            //this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][deviceIndex] = false;
+            //this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][`${hid}_${deviceIndex}`] = false;
         }
 
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.signal.hub_rssi')) {
-            if (!this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][deviceIndex]) {
-                this.log.warn(`no hub rssi found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_SIGNAL_STRENGTH_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no hub rssi found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2098,7 +2092,7 @@ class Sureflap extends utils.Adapter {
                 this.setState(objName, this.devices[hid][deviceIndex].status.signal.hub_rssi, true);
             }
             // API randomly does not return rssi -> do not reset warning until API is fixed or logs will be spammed
-            //this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][deviceIndex] = false;
+            //this.warnings[DEVICE_SIGNAL_STRENGTH_MISSING][`${hid}_${deviceIndex}`] = false;
         }
     }
 
@@ -2116,10 +2110,11 @@ class Sureflap extends utils.Adapter {
         }
 
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.version.device.hardware')) {
-            if (!this.warnings[DEVICE_VERSION_NUMBER_MISSING][deviceIndex]) {
-                this.log.warn(`no hardware version found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_VERSION_NUMBER_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_VERSION_NUMBER_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no hardware version found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2130,14 +2125,15 @@ class Sureflap extends utils.Adapter {
                 const objName = `${hierarchy}.${this.devices[hid][deviceIndex].name}.version` + `.hardware`;
                 this.setState(objName, this.devices[hid][deviceIndex].status.version.device.hardware, true);
             }
-            this.warnings[DEVICE_VERSION_NUMBER_MISSING][deviceIndex] = false;
+            this.warnings[DEVICE_VERSION_NUMBER_MISSING][`${hid}_${deviceIndex}`] = false;
         }
 
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.version.device.firmware')) {
-            if (!this.warnings[DEVICE_VERSION_NUMBER_MISSING][deviceIndex]) {
-                this.log.warn(`no firmware version found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_VERSION_NUMBER_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_VERSION_NUMBER_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no firmware version found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2148,7 +2144,7 @@ class Sureflap extends utils.Adapter {
                 const objName = `${hierarchy}.${this.devices[hid][deviceIndex].name}.version` + `.firmware`;
                 this.setState(objName, this.devices[hid][deviceIndex].status.version.device.firmware, true);
             }
-            this.warnings[DEVICE_VERSION_NUMBER_MISSING][deviceIndex] = false;
+            this.warnings[DEVICE_VERSION_NUMBER_MISSING][`${hid}_${deviceIndex}`] = false;
         }
     }
 
@@ -2161,10 +2157,11 @@ class Sureflap extends utils.Adapter {
      */
     setHubStatusToAdapter(prefix, hid, deviceIndex) {
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.led_mode')) {
-            if (!this.warnings[HUB_LED_MODE_MISSING][deviceIndex]) {
-                this.log.warn(`no led mode found for hub '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[HUB_LED_MODE_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                HUB_LED_MODE_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no led mode found for hub '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2174,14 +2171,15 @@ class Sureflap extends utils.Adapter {
                 const objName = `${prefix}.${this.devices[hid][deviceIndex].name}.control.` + `led_mode`;
                 this.setState(objName, this.devices[hid][deviceIndex].status.led_mode, true);
             }
-            this.warnings[HUB_LED_MODE_MISSING][deviceIndex] = false;
+            this.warnings[HUB_LED_MODE_MISSING][`${hid}_${deviceIndex}`] = false;
         }
 
         if (!this.devices[hid][deviceIndex].serial_number) {
-            if (!this.warnings[DEVICE_SERIAL_NUMBER_MISSING][deviceIndex]) {
-                this.log.warn(`no serial number found for hub '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_SERIAL_NUMBER_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_SERIAL_NUMBER_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no serial number found for hub '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2191,7 +2189,7 @@ class Sureflap extends utils.Adapter {
                 const objName = `${prefix}.${this.devices[hid][deviceIndex].name}.serial_number`;
                 this.setState(objName, this.devices[hid][deviceIndex].serial_number, true);
             }
-            this.warnings[DEVICE_SERIAL_NUMBER_MISSING][deviceIndex] = false;
+            this.warnings[DEVICE_SERIAL_NUMBER_MISSING][`${hid}_${deviceIndex}`] = false;
         }
     }
 
@@ -2205,10 +2203,11 @@ class Sureflap extends utils.Adapter {
     setOnlineStatusToAdapter(prefix, hid, deviceIndex) {
         // online status
         if (!this.objectContainsPath(this.devices[hid][deviceIndex], 'status.online')) {
-            if (!this.warnings[DEVICE_ONLINE_STATUS_MISSING][deviceIndex]) {
-                this.log.warn(`no online status found for '${this.devices[hid][deviceIndex].name}'.`);
-                this.warnings[DEVICE_ONLINE_STATUS_MISSING][deviceIndex] = true;
-            }
+            this._warnOnce(
+                DEVICE_ONLINE_STATUS_MISSING,
+                `${hid}_${deviceIndex}`,
+                `no online status found for '${this.devices[hid][deviceIndex].name}'.`,
+            );
         } else {
             if (
                 !this.devicesPrev[hid] ||
@@ -2224,7 +2223,7 @@ class Sureflap extends utils.Adapter {
                 }
                 this.setState(objName, this.devices[hid][deviceIndex].status.online, true);
             }
-            this.warnings[DEVICE_ONLINE_STATUS_MISSING][deviceIndex] = false;
+            this.warnings[DEVICE_ONLINE_STATUS_MISSING][`${hid}_${deviceIndex}`] = false;
         }
     }
 
@@ -2261,10 +2260,7 @@ class Sureflap extends utils.Adapter {
             !this.objectContainsPath(this.pets[petIndex], 'position.where') ||
             !this.objectContainsPath(this.pets[petIndex], 'position.since')
         ) {
-            if (!this.warnings[PET_POSITION_DATA_MISSING][petIndex]) {
-                this.log.debug(`no position object found for pet '${name}'`);
-                this.warnings[PET_POSITION_DATA_MISSING][petIndex] = true;
-            }
+            this._warnOnce(PET_POSITION_DATA_MISSING, petIndex, `no position object found for pet '${name}'`);
         } else {
             if (
                 !this.petsPrev ||
@@ -2311,10 +2307,11 @@ class Sureflap extends utils.Adapter {
             }
             this.warnings[PET_FEEDING_DATA_MISSING][p] = false;
         } else {
-            if (!this.warnings[PET_FEEDING_DATA_MISSING][p]) {
-                this.log.warn(`aggregated report for pet '${this.pets[p].name}' does not contain feeding data`);
-                this.warnings[PET_FEEDING_DATA_MISSING][p] = true;
-            }
+            this._warnOnce(
+                PET_FEEDING_DATA_MISSING,
+                p,
+                `aggregated report for pet '${this.pets[p].name}' does not contain feeding data`,
+            );
         }
     }
 
@@ -2346,10 +2343,11 @@ class Sureflap extends utils.Adapter {
             }
             this.warnings[PET_DRINKING_DATA_MISSING][p] = false;
         } else {
-            if (!this.warnings[PET_DRINKING_DATA_MISSING][p]) {
-                this.log.warn(`aggregated report for pet '${this.pets[p].name}' does not contain drinking data`);
-                this.warnings[PET_DRINKING_DATA_MISSING][p] = true;
-            }
+            this._warnOnce(
+                PET_DRINKING_DATA_MISSING,
+                p,
+                `aggregated report for pet '${this.pets[p].name}' does not contain drinking data`,
+            );
         }
     }
 
@@ -2378,10 +2376,11 @@ class Sureflap extends utils.Adapter {
             }
             this.warnings[PET_OUTSIDE_DATA_MISSING][p] = false;
         } else {
-            if (!this.warnings[PET_OUTSIDE_DATA_MISSING][p]) {
-                this.log.warn(`aggregated report for pet '${this.pets[p].name}' does not contain movement data`);
-                this.warnings[PET_OUTSIDE_DATA_MISSING][p] = true;
-            }
+            this._warnOnce(
+                PET_OUTSIDE_DATA_MISSING,
+                p,
+                `aggregated report for pet '${this.pets[p].name}' does not contain movement data`,
+            );
         }
     }
 
@@ -2414,10 +2413,11 @@ class Sureflap extends utils.Adapter {
                 this.setState(`${prefix + hierarchy}.last_flap_id`, movement.last_flap_id, true);
                 this.warnings[PET_FLAP_STATUS_DATA_MISSING][petIndex] = false;
             } else {
-                if (!this.warnings[PET_FLAP_STATUS_DATA_MISSING][petIndex]) {
-                    this.log.warn(`history does not contain flap movement for pet '${petName}'`);
-                    this.warnings[PET_FLAP_STATUS_DATA_MISSING][petIndex] = true;
-                }
+                this._warnOnce(
+                    PET_FLAP_STATUS_DATA_MISSING,
+                    petIndex,
+                    `history does not contain flap movement for pet '${petName}'`,
+                );
             }
         }
     }
@@ -4143,10 +4143,7 @@ class Sureflap extends utils.Adapter {
                         this.createPetHierarchyToAdapter(prefix, householdName, petName, petNameOrg, petId),
                     );
                 } else {
-                    if (!this.warnings[PET_HOUSEHOLD_MISSING][p]) {
-                        this.log.warn(`could not get household for pet (${petName})`);
-                        this.warnings[PET_HOUSEHOLD_MISSING][p] = true;
-                    }
+                    this._warnOnce(PET_HOUSEHOLD_MISSING, p, `could not get household for pet (${petName})`);
                 }
             }
             if (this.config.unknown_movement_enable) {
@@ -4481,7 +4478,7 @@ class Sureflap extends utils.Adapter {
      ******************/
 
     /**
-     * compares two version strings in format patch.major.minor
+     * compares two version strings in format major.minor.patch
      *
      * @param version a version string
      * @param lessThan a version string
@@ -4794,17 +4791,11 @@ class Sureflap extends utils.Adapter {
                 return undefined;
             }
 
-            const curfew = [];
-            for (let i = 0; i < jsonObject.length; i++) {
-                curfew[i] = {};
-                if ('enabled' in jsonObject[i] && typeof jsonObject[i].enabled === 'boolean') {
-                    curfew[i]['enabled'] = jsonObject[i].enabled;
-                } else {
-                    curfew[i]['enabled'] = true;
-                }
-                curfew[i]['lock_time'] = jsonObject[i].lock_time;
-                curfew[i]['unlock_time'] = jsonObject[i].unlock_time;
-            }
+            const curfew = jsonObject.map(entry => ({
+                enabled: 'enabled' in entry && typeof entry.enabled === 'boolean' ? entry.enabled : true,
+                lock_time: entry.lock_time,
+                unlock_time: entry.unlock_time,
+            }));
             return curfew;
         } catch (err) {
             this.log.error(`could not parse new_curfew as JSON because: ${err}`);
@@ -5213,6 +5204,20 @@ class Sureflap extends utils.Adapter {
                     device.status.battery = Math.floor(battery * 10 + prevBattery * 990) / 1000;
                 }
             }
+        }
+    }
+
+    /**
+     * logs a warning once per key/index combination to avoid spamming the log
+     *
+     * @param {number} key the warning key constant
+     * @param {number|string} index unique index for this warning (pet index, or `${hid}_${deviceIndex}` for devices)
+     * @param {string} message the message to log
+     */
+    _warnOnce(key, index, message) {
+        if (!this.warnings[key][index]) {
+            this.log.warn(message);
+            this.warnings[key][index] = true;
         }
     }
 

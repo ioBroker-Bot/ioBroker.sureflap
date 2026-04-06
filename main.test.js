@@ -1263,4 +1263,60 @@ describe('Sureflap', () => {
             expect(adapter.isVersionLessThan('3.2.6', '3.2.5')).to.be.false;
         });
     });
+
+    // ─── _warnOnce ────────────────────────────────────────────────────────────
+
+    describe('_warnOnce', () => {
+        const KEY = 201; // DEVICE_BATTERY_DATA_MISSING
+
+        let adapter;
+
+        beforeEach(() => {
+            adapter = createAdapter();
+            adapter.warnings[KEY] = [];
+        });
+
+        it('logs a warning on first call', () => {
+            adapter._warnOnce(KEY, 0, 'test warning');
+            expect(adapter.log.warn).to.have.been.calledOnceWith('test warning');
+        });
+
+        it('does not log a warning on subsequent calls with the same index', () => {
+            adapter._warnOnce(KEY, 0, 'test warning');
+            adapter._warnOnce(KEY, 0, 'test warning');
+            expect(adapter.log.warn).to.have.been.calledOnce;
+        });
+
+        it('logs independently for different indices', () => {
+            adapter._warnOnce(KEY, 0, 'warning for 0');
+            adapter._warnOnce(KEY, 1, 'warning for 1');
+            expect(adapter.log.warn).to.have.been.calledTwice;
+            expect(adapter.log.warn).to.have.been.calledWith('warning for 0');
+            expect(adapter.log.warn).to.have.been.calledWith('warning for 1');
+        });
+
+        it('logs independently for different keys', () => {
+            const OTHER_KEY = 202; // DEVICE_BATTERY_PERCENTAGE_DATA_MISSING
+            adapter.warnings[OTHER_KEY] = [];
+            adapter._warnOnce(KEY, 0, 'battery missing');
+            adapter._warnOnce(OTHER_KEY, 0, 'battery percentage missing');
+            expect(adapter.log.warn).to.have.been.calledTwice;
+        });
+
+        it('accepts a composite string index for device warnings', () => {
+            adapter._warnOnce(KEY, '42_0', 'household 42, device 0');
+            adapter._warnOnce(KEY, '42_0', 'household 42, device 0');
+            adapter._warnOnce(KEY, '99_0', 'household 99, device 0');
+            expect(adapter.log.warn).to.have.been.calledTwice;
+            expect(adapter.log.warn).to.have.been.calledWith('household 42, device 0');
+            expect(adapter.log.warn).to.have.been.calledWith('household 99, device 0');
+        });
+
+        it('logs again after the warning flag is reset', () => {
+            adapter._warnOnce(KEY, 0, 'test warning');
+            adapter.warnings[KEY][0] = false;
+            adapter._warnOnce(KEY, 0, 'test warning');
+            expect(adapter.log.warn).to.have.been.calledTwice;
+        });
+    });
 });
