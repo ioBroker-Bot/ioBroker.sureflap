@@ -4488,24 +4488,21 @@ class Sureflap extends utils.Adapter {
      * @returns {boolean} true, if version is less than lessThan, false otherwise
      */
     isVersionLessThan(version, lessThan) {
-        if (version === undefined || version === null || version === 'unknown' || version.split('.').length < 3) {
+        const isInvalid = (v) => v == null || v === 'unknown' || v.split('.').length < 3;
+        if (isInvalid(version) || isInvalid(lessThan) || version === lessThan) {
             return false;
         }
-        if (lessThan === undefined || lessThan === null || lessThan === 'unknown' || lessThan.split('.').length < 3) {
-            return false;
+        const vParts = version.split('.').map(Number);
+        const lParts = lessThan.split('.').map(Number);
+        for (let i = 0; i < 3; i++) {
+            if (vParts[i] < lParts[i]) {
+                return true;
+            }
+            if (vParts[i] > lParts[i]) {
+                return false;
+            }
         }
-        if (version === lessThan) {
-            return false;
-        }
-        const versionObj = version.split('.');
-        const lessThanObj = lessThan.split('.');
-        return (
-            parseInt(versionObj[0]) < parseInt(lessThanObj[0]) ||
-            (versionObj[0] === lessThanObj[0] && parseInt(versionObj[1]) < parseInt(lessThanObj[1])) ||
-            (versionObj[0] === lessThanObj[0] &&
-                versionObj[1] === lessThanObj[1] &&
-                parseInt(versionObj[2]) < parseInt(lessThanObj[2]))
-        );
+        return false;
     }
 
     /**
@@ -4518,19 +4515,17 @@ class Sureflap extends utils.Adapter {
             this.allDevicesOnlinePrev = this.allDevicesOnline;
         }
         this.offlineDevicesPrev = this.offlineDevices;
-
-        this.allDevicesOnline = true;
         this.offlineDevices = [];
-        for (let h = 0; h < this.households.length; h++) {
-            const hid = this.households[h].id;
 
-            for (let d = 0; d < this.devices[hid].length; d++) {
-                this.allDevicesOnline = this.allDevicesOnline && this.devices[hid][d].status.online;
-                if (!this.devices[hid][d].status.online) {
-                    this.offlineDevices.push(this.devices[hid][d].name);
+        for (const household of this.households) {
+            for (const device of this.devices[household.id]) {
+                if (!device.status.online) {
+                    this.offlineDevices.push(device.name);
                 }
             }
         }
+
+        this.allDevicesOnline = this.offlineDevices.length === 0;
     }
 
     /**
@@ -4539,14 +4534,12 @@ class Sureflap extends utils.Adapter {
     calculateBatteryPercentageForDevices() {
         this.log.silly(`calculating battery percentages for devices`);
 
-        for (let h = 0; h < this.households.length; h++) {
-            const hid = this.households[h].id;
-
-            for (let d = 0; d < this.devices[hid].length; d++) {
-                if (this.devices[hid][d].status.battery) {
-                    this.devices[hid][d].status.battery_percentage = this.calculateBatteryPercentage(
-                        this.devices[hid][d].product_id,
-                        this.devices[hid][d].status.battery,
+        for (const household of this.households) {
+            for (const device of this.devices[household.id]) {
+                if (device.status.battery) {
+                    device.status.battery_percentage = this.calculateBatteryPercentage(
+                        device.product_id,
+                        device.status.battery,
                     );
                 }
             }
@@ -4557,25 +4550,59 @@ class Sureflap extends utils.Adapter {
      * determines device types
      */
     getConnectedDeviceTypes() {
-        if (this.firstLoop) {
-            this.log.silly(`setting connected device types`);
+        if (!this.firstLoop) {
+            return;
+        }
+        this.log.silly(`setting connected device types`);
 
-            for (let h = 0; h < this.households.length; h++) {
-                const hid = this.households[h].id;
+        for (const household of this.households) {
+            for (const device of this.devices[household.id]) {
+                switch (device.product_id) {
+                    case DEVICE_TYPE_CAT_FLAP:
+                    case DEVICE_TYPE_PET_FLAP:
+                        this.hasFlap = true;
+                        break;
+                    case DEVICE_TYPE_FEEDER:
+                        this.hasFeeder = true;
+                        break;
+                    case DEVICE_TYPE_WATER_DISPENSER:
+                        this.hasDispenser = true;
+                        break;
+                }
+            }
+        }
+    }
 
-                for (let d = 0; d < this.devices[hid].length; d++) {
-                    switch (this.devices[hid][d].product_id) {
-                        case DEVICE_TYPE_CAT_FLAP:
-                        case DEVICE_TYPE_PET_FLAP:
-                            this.hasFlap = true;
-                            break;
-                        case DEVICE_TYPE_FEEDER:
-                            this.hasFeeder = true;
-                            break;
-                        case DEVICE_TYPE_WATER_DISPENSER:
-                            this.hasDispenser = true;
-                            break;
-                    }
+    /**
+     * Updates data with the most recent flap movement found in datapoint.
+     * Only processes movements with a non-zero direction through cat/pet flap devices.
+     *
+     * @param {object} datapoint a history datapoint
+     * @param {object} data the result object to update in place
+     */
+    _updateLastMovementFromDatapoint(datapoint, data) {
+        if (!Array.isArray(datapoint.movements) || datapoint.movements.length === 0) {
+            return;
+        }
+        if (!('created_at' in datapoint) || !Array.isArray(datapoint.devices) || datapoint.devices.length === 0) {
+            return;
+        }
+        for (const movement of datapoint.movements) {
+            if (!('direction' in movement) || movement.direction === 0) {
+                continue;
+            }
+            for (const device of datapoint.devices) {
+                if (
+                    'product_id' in device &&
+                    (device.product_id === DEVICE_TYPE_CAT_FLAP || device.product_id === DEVICE_TYPE_PET_FLAP) &&
+                    'name' in device &&
+                    'id' in device &&
+                    (!('last_time' in data) || new Date(datapoint.created_at) > new Date(data.last_time))
+                ) {
+                    data.last_direction = movement.direction;
+                    data.last_flap = device.name;
+                    data.last_flap_id = device.id;
+                    data.last_time = datapoint.created_at;
                 }
             }
         }
@@ -4585,66 +4612,25 @@ class Sureflap extends utils.Adapter {
      * calculates last movement for pet
      *
      * @param {string} petName a pet name
-     * @param {number} hid a household id
+     * @param {number} householdId a household id
      * @returns {object} last used flap data object
      */
-    calculateLastMovement(petName, hid) {
+    calculateLastMovement(petName, householdId) {
         const data = {};
-        if (Array.isArray(this.history[hid])) {
-            for (let i = 0; i < this.history[hid].length; i++) {
-                const datapoint = this.history[hid][i];
-                if ('type' in datapoint && datapoint.type === 0) {
-                    if ('pets' in datapoint && Array.isArray(datapoint.pets) && datapoint.pets.length > 0) {
-                        for (let p = 0; p < datapoint.pets.length; p++) {
-                            if ('name' in datapoint.pets[p] && petName === datapoint.pets[p].name) {
-                                if (
-                                    'movements' in datapoint &&
-                                    Array.isArray(datapoint.movements) &&
-                                    datapoint.movements.length > 0
-                                ) {
-                                    for (let m = 0; m < datapoint.movements.length; m++) {
-                                        if (
-                                            'direction' in datapoint.movements[m] &&
-                                            datapoint.movements[m].direction !== 0
-                                        ) {
-                                            if (
-                                                'created_at' in datapoint &&
-                                                'devices' in datapoint &&
-                                                Array.isArray(datapoint.devices) &&
-                                                datapoint.devices.length > 0
-                                            ) {
-                                                for (let d = 0; d < datapoint.devices.length; d++) {
-                                                    if (
-                                                        'product_id' in datapoint.devices[d] &&
-                                                        (datapoint.devices[d].product_id === DEVICE_TYPE_CAT_FLAP ||
-                                                            datapoint.devices[d].product_id === DEVICE_TYPE_PET_FLAP)
-                                                    ) {
-                                                        if (
-                                                            'name' in datapoint.devices[d] &&
-                                                            'id' in datapoint.devices[d]
-                                                        ) {
-                                                            if (
-                                                                !('last_time' in data) ||
-                                                                new Date(datapoint.created_at) >
-                                                                    new Date(data.last_time)
-                                                            ) {
-                                                                data.last_direction = datapoint.movements[m].direction;
-                                                                data.last_flap = datapoint.devices[d].name;
-                                                                data.last_flap_id = datapoint.devices[d].id;
-                                                                data.last_time = datapoint.created_at;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        if (!Array.isArray(this.history[householdId])) {
+            return data;
+        }
+        for (const datapoint of this.history[householdId]) {
+            if (datapoint.type !== 0) {
+                continue;
             }
+            if (!Array.isArray(datapoint.pets) || datapoint.pets.length === 0) {
+                continue;
+            }
+            if (!datapoint.pets.some(pet => 'name' in pet && pet.name === petName)) {
+                continue;
+            }
+            this._updateLastMovementFromDatapoint(datapoint, data);
         }
         return data;
     }
@@ -4652,58 +4638,22 @@ class Sureflap extends utils.Adapter {
     /**
      * calculates last movement for unknown pet
      *
-     * @param {number} hid a household id
+     * @param {number} householdId a household id
      * @returns {object} last used flap data object
      */
-    calculateLastMovementForUnknownPet(hid) {
+    calculateLastMovementForUnknownPet(householdId) {
         const data = {};
-        if (Array.isArray(this.history[hid])) {
-            for (let i = 0; i < this.history[hid].length; i++) {
-                const datapoint = this.history[hid][i];
-                if ('type' in datapoint && datapoint.type === 7) {
-                    if (
-                        'movements' in datapoint &&
-                        Array.isArray(datapoint.movements) &&
-                        datapoint.movements.length > 0
-                    ) {
-                        if (
-                            !('pets' in datapoint) &&
-                            !('tag_id' in datapoint.movements && datapoint.movements.tag_id !== 0)
-                        ) {
-                            for (let m = 0; m < datapoint.movements.length; m++) {
-                                if ('direction' in datapoint.movements[m] && datapoint.movements[m].direction !== 0) {
-                                    if (
-                                        'created_at' in datapoint &&
-                                        'devices' in datapoint &&
-                                        Array.isArray(datapoint.devices) &&
-                                        datapoint.devices.length > 0
-                                    ) {
-                                        for (let d = 0; d < datapoint.devices.length; d++) {
-                                            if (
-                                                'product_id' in datapoint.devices[d] &&
-                                                (datapoint.devices[d].product_id === DEVICE_TYPE_CAT_FLAP ||
-                                                    datapoint.devices[d].product_id === DEVICE_TYPE_PET_FLAP)
-                                            ) {
-                                                if ('name' in datapoint.devices[d] && 'id' in datapoint.devices[d]) {
-                                                    if (
-                                                        !('last_time' in data) ||
-                                                        new Date(datapoint.created_at) > new Date(data.last_time)
-                                                    ) {
-                                                        data.last_direction = datapoint.movements[m].direction;
-                                                        data.last_flap = datapoint.devices[d].name;
-                                                        data.last_flap_id = datapoint.devices[d].id;
-                                                        data.last_time = datapoint.created_at;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        if (!Array.isArray(this.history[householdId])) {
+            return data;
+        }
+        for (const datapoint of this.history[householdId]) {
+            if (datapoint.type !== 7) {
+                continue;
             }
+            if ('pets' in datapoint || ('tag_id' in datapoint.movements && datapoint.movements.tag_id !== 0)) {
+                continue;
+            }
+            this._updateLastMovementFromDatapoint(datapoint, data);
         }
         return data;
     }
@@ -4715,31 +4665,29 @@ class Sureflap extends utils.Adapter {
      * @returns {object} time outside data object
      */
     calculateTimeOutside(pet) {
-        const data = {};
-        data.count = 0;
-        data.time_spent_outside = 0;
-        for (let i = 0; i < this.report[pet].movement.datapoints.length; i++) {
-            const datapoint = this.report[pet].movement.datapoints[i];
-            if ('from' in datapoint && 'to' in datapoint) {
-                if (this.isToday(new Date(datapoint.to))) {
-                    data.count++;
-                    if ('duration' in datapoint && this.isToday(new Date(datapoint.from))) {
-                        data.time_spent_outside += datapoint.duration;
-                    } else {
-                        if (this.isToday(new Date(datapoint.from))) {
-                            data.time_spent_outside += Math.floor(
-                                (new Date(datapoint.to).getTime() - new Date(datapoint.from).getTime()) / 1000,
-                            );
-                        } else {
-                            const todayMidnight = new Date();
-                            todayMidnight.setHours(0, 0, 0, 0);
-                            data.time_spent_outside += Math.floor(
-                                (new Date(datapoint.to).getTime() - todayMidnight.getTime()) / 1000,
-                            );
-                        }
-                    }
-                    this.log.silly(`datapoint '${i}' is time spent outside today`);
-                }
+        const data = {
+            count: 0,
+            time_spent_outside: 0,
+        };
+        for (const datapoint of this.report[pet].movement.datapoints) {
+            if (!('from' in datapoint && 'to' in datapoint)) {
+                continue;
+            }
+            const dateTo = new Date(datapoint.to);
+            if (!this.isToday(dateTo)) {
+                continue;
+            }
+            data.count++;
+            const dateFrom = new Date(datapoint.from);
+            const fromIsToday = this.isToday(dateFrom);
+            if ('duration' in datapoint && fromIsToday) {
+                data.time_spent_outside += datapoint.duration;
+            } else if (fromIsToday) {
+                data.time_spent_outside += Math.floor((dateTo.getTime() - dateFrom.getTime()) / 1000);
+            } else {
+                const todayMidnight = new Date();
+                todayMidnight.setHours(0, 0, 0, 0);
+                data.time_spent_outside += Math.floor((dateTo.getTime() - todayMidnight.getTime()) / 1000);
             }
         }
         return data;
@@ -4752,32 +4700,31 @@ class Sureflap extends utils.Adapter {
      * @returns {object} food consumption data object
      */
     calculateFoodConsumption(pet) {
-        const data = {};
-        data.count = 0;
-        data.last_time = this.getDateFormattedAsISO(new Date(0));
-        data.time_spent = 0;
-        data.weight = [];
-        data.weight[FEEDER_FOOD_WET] = 0;
-        data.weight[FEEDER_FOOD_DRY] = 0;
-        for (let i = 0; i < this.report[pet].feeding.datapoints.length; i++) {
-            const datapoint = this.report[pet].feeding.datapoints[i];
-            if (datapoint.context === 1) {
-                if (new Date(datapoint.to) > new Date(data.last_time)) {
-                    data.last_time = datapoint.to;
-                }
-                if (this.isToday(new Date(datapoint.to))) {
-                    data.count++;
-                    if ('duration' in datapoint) {
-                        data.time_spent += datapoint.duration;
-                    } else {
-                        data.time_spent += Math.floor(
-                            (new Date(datapoint.to).getTime() - new Date(datapoint.from).getTime()) / 1000,
-                        );
-                    }
-                    this.log.silly(`datapoint '${i}' is food eaten today`);
-                    for (let b = 0; b < datapoint.weights.length; b++) {
-                        data.weight[datapoint.weights[b].food_type_id] -= datapoint.weights[b].change;
-                    }
+        const weight = [];
+        weight[FEEDER_FOOD_WET] = 0;
+        weight[FEEDER_FOOD_DRY] = 0;
+        const data = {
+            count: 0,
+            last_time: this.getDateFormattedAsISO(new Date(0)),
+            time_spent: 0,
+            weight,
+        };
+        for (const datapoint of this.report[pet].feeding.datapoints) {
+            if (datapoint.context !== 1) {
+                continue;
+            }
+            const dateTo = new Date(datapoint.to);
+            if (dateTo > new Date(data.last_time)) {
+                data.last_time = datapoint.to;
+            }
+            if (this.isToday(dateTo)) {
+                data.count++;
+                data.time_spent +=
+                    'duration' in datapoint
+                        ? datapoint.duration
+                        : Math.floor((dateTo.getTime() - new Date(datapoint.from).getTime()) / 1000);
+                for (const bowl of datapoint.weights) {
+                    data.weight[bowl.food_type_id] -= bowl.change;
                 }
             }
         }
@@ -4791,29 +4738,27 @@ class Sureflap extends utils.Adapter {
      * @returns {object} water consumption data object
      */
     calculateWaterConsumption(pet) {
-        const data = {};
-        data.count = 0;
-        data.last_time = this.getDateFormattedAsISO(new Date(0));
-        data.time_spent = 0;
-        data.weight = 0;
-        for (let i = 0; i < this.report[pet].drinking.datapoints.length; i++) {
-            const datapoint = this.report[pet].drinking.datapoints[i];
-            if (datapoint.context === 1) {
-                if (new Date(datapoint.to) > new Date(data.last_time)) {
-                    data.last_time = datapoint.to;
-                }
-                if (this.isToday(new Date(datapoint.to))) {
-                    data.count++;
-                    if ('duration' in datapoint) {
-                        data.time_spent += datapoint.duration;
-                    } else {
-                        data.time_spent += Math.floor(
-                            (new Date(datapoint.to).getTime() - new Date(datapoint.from).getTime()) / 1000,
-                        );
-                    }
-                    this.log.silly(`datapoint '${i}' is water drunk today`);
-                    data.weight -= datapoint.weights[0].change;
-                }
+        const data = {
+            count: 0,
+            last_time: this.getDateFormattedAsISO(new Date(0)),
+            time_spent: 0,
+            weight: 0,
+        };
+        for (const datapoint of this.report[pet].drinking.datapoints) {
+            if (datapoint.context !== 1) {
+                continue;
+            }
+            const dateTo = new Date(datapoint.to);
+            if (dateTo > new Date(data.last_time)) {
+                data.last_time = datapoint.to;
+            }
+            if (this.isToday(dateTo)) {
+                data.count++;
+                data.time_spent +=
+                    'duration' in datapoint
+                        ? datapoint.duration
+                        : Math.floor((dateTo.getTime() - new Date(datapoint.from).getTime()) / 1000);
+                data.weight -= datapoint.weights[0].change;
             }
         }
         return data;
@@ -4874,12 +4819,7 @@ class Sureflap extends utils.Adapter {
      * @returns {boolean} whether the curfew is enabled
      */
     isCurfewEnabled(curfew) {
-        for (let h = 0; h < curfew.length; h++) {
-            if (curfew[h].enabled === true) {
-                return true;
-            }
-        }
-        return false;
+        return curfew.some(entry => entry.enabled === true);
     }
 
     /**
@@ -4905,7 +4845,6 @@ class Sureflap extends utils.Adapter {
                 const startMinutes = parseInt(start[1]);
                 const endHour = parseInt(end[0]);
                 const endMinutes = parseInt(end[1]);
-                //this.log.debug(`curfew ${h} start ${startHour}:${startMinutes} end ${endHour}:${endMinutes} current ${currentHour}:${currentMinutes}`);
                 if (startHour < endHour || (startHour === endHour && startMinutes < endMinutes)) {
                     // current time must be between start and end
                     if (startHour < currentHour || (startHour === currentHour && startMinutes <= currentMinutes)) {
@@ -4971,15 +4910,16 @@ class Sureflap extends utils.Adapter {
     /**
      * returns the tag index for the tag of the device
      *
-     * @param {number} hid a household id
+     * @param {number} householdId a household id
      * @param {number} deviceIndex a device index
      * @param {number} tag a tag ID
      * @returns {number} tag index
      */
-    getTagIndexForDeviceIndex(hid, deviceIndex, tag) {
-        if ('tags' in this.devices[hid][deviceIndex]) {
-            for (let t = 0; t < this.devices[hid][deviceIndex].tags.length; t++) {
-                if (this.devices[hid][deviceIndex].tags[t].id === tag) {
+    getTagIndexForDeviceIndex(householdId, deviceIndex, tag) {
+        const device = this.devices[householdId][deviceIndex];
+        if ('tags' in device) {
+            for (let t = 0; t < device.tags.length; t++) {
+                if (device.tags[t].id === tag) {
                     return t;
                 }
             }
@@ -5178,12 +5118,12 @@ class Sureflap extends utils.Adapter {
     normalizeLockMode() {
         this.log.silly(`normalizing lock mode`);
 
-        for (let h = 0; h < this.households.length; h++) {
-            const hid = this.households[h].id;
-            for (let d = 0; d < this.devices[hid].length; d++) {
-                if ('locking' in this.devices[hid][d].status && 'mode' in this.devices[hid][d].status.locking) {
-                    if (this.devices[hid][d].status.locking.mode === 4) {
-                        this.devices[hid][d].status.locking.mode = 0;
+        for (const household of this.households) {
+            const householdId = household.id;
+            for (const device of this.devices[householdId]) {
+                if ('locking' in device.status && 'mode' in device.status.locking) {
+                    if (device.status.locking.mode === 4) {
+                        device.status.locking.mode = 0;
                     }
                 }
             }
@@ -5197,19 +5137,17 @@ class Sureflap extends utils.Adapter {
     normalizeCurfew() {
         this.log.silly(`normalizing curfew`);
 
-        for (let h = 0; h < this.households.length; h++) {
-            const hid = this.households[h].id;
-            for (let d = 0; d < this.devices[hid].length; d++) {
-                if ([DEVICE_TYPE_CAT_FLAP, DEVICE_TYPE_PET_FLAP].includes(this.devices[hid][d].product_id)) {
-                    if ('curfew' in this.devices[hid][d].control) {
-                        if (!Array.isArray(this.devices[hid][d].control.curfew)) {
-                            this.devices[hid][d].control.curfew = [this.devices[hid][d].control.curfew];
+        for (const household of this.households) {
+            const householdId = household.id;
+            for (const device of this.devices[householdId]) {
+                if ([DEVICE_TYPE_CAT_FLAP, DEVICE_TYPE_PET_FLAP].includes(device.product_id)) {
+                    if ('curfew' in device.control) {
+                        if (!Array.isArray(device.control.curfew)) {
+                            device.control.curfew = [device.control.curfew];
                         }
-                        this.devices[hid][d].control.curfew = this.convertCurfewUtcTimesToLocalTimes(
-                            this.devices[hid][d].control.curfew,
-                        );
+                        device.control.curfew = this.convertCurfewUtcTimesToLocalTimes(device.control.curfew);
                     } else {
-                        this.devices[hid][d].control.curfew = [];
+                        device.control.curfew = [];
                     }
                 }
             }
@@ -5224,10 +5162,10 @@ class Sureflap extends utils.Adapter {
      */
     convertCurfewUtcTimesToLocalTimes(curfew) {
         if (Array.isArray(curfew)) {
-            for (let c = 0; c < curfew.length; c++) {
-                if ('lock_time' in curfew[c] && 'unlock_time' in curfew[c]) {
-                    curfew[c].lock_time = this.convertUtcTimeToLocalTime(curfew[c].lock_time);
-                    curfew[c].unlock_time = this.convertUtcTimeToLocalTime(curfew[c].unlock_time);
+            for (const entry of curfew) {
+                if ('lock_time' in entry && 'unlock_time' in entry) {
+                    entry.lock_time = this.convertUtcTimeToLocalTime(entry.lock_time);
+                    entry.unlock_time = this.convertUtcTimeToLocalTime(entry.unlock_time);
                 }
             }
         }
@@ -5242,10 +5180,10 @@ class Sureflap extends utils.Adapter {
      */
     convertCurfewLocalTimesToUtcTimes(curfew) {
         if (Array.isArray(curfew)) {
-            for (let c = 0; c < curfew.length; c++) {
-                if ('lock_time' in curfew[c] && 'unlock_time' in curfew[c]) {
-                    curfew[c].lock_time = this.convertLocalTimeToUtcTime(curfew[c].lock_time);
-                    curfew[c].unlock_time = this.convertLocalTimeToUtcTime(curfew[c].unlock_time);
+            for (const entry of curfew) {
+                if ('lock_time' in entry && 'unlock_time' in entry) {
+                    entry.lock_time = this.convertLocalTimeToUtcTime(entry.lock_time);
+                    entry.unlock_time = this.convertLocalTimeToUtcTime(entry.unlock_time);
                 }
             }
         }
@@ -5258,27 +5196,36 @@ class Sureflap extends utils.Adapter {
     smoothBatteryOutliers() {
         this.log.silly(`smoothing battery outliers`);
 
-        for (let h = 0; h < this.households.length; h++) {
-            const hid = this.households[h].id;
-            if (this.devicesPrev[hid]) {
-                for (let d = 0; d < this.devices[hid].length; d++) {
-                    if (this.devices[hid][d].status.battery) {
-                        if (this.devices[hid][d].status.battery > this.devicesPrev[hid][d].status.battery) {
-                            this.devices[hid][d].status.battery =
-                                Math.ceil(
-                                    this.devices[hid][d].status.battery * 10 +
-                                        this.devicesPrev[hid][d].status.battery * 990,
-                                ) / 1000;
-                        } else if (this.devices[hid][d].status.battery < this.devicesPrev[hid][d].status.battery) {
-                            this.devices[hid][d].status.battery =
-                                Math.floor(
-                                    this.devices[hid][d].status.battery * 10 +
-                                        this.devicesPrev[hid][d].status.battery * 990,
-                                ) / 1000;
-                        }
-                    }
+        for (const household of this.households) {
+            const householdId = household.id;
+            if (!this.devicesPrev[householdId]) {
+                continue;
+            }
+            for (const [d, device] of this.devices[householdId].entries()) {
+                const battery = device.status.battery;
+                const prevBattery = this.devicesPrev[householdId][d].status.battery;
+                if (!battery || !prevBattery) {
+                    continue;
+                }
+                if (battery > prevBattery) {
+                    device.status.battery = Math.ceil(battery * 10 + prevBattery * 990) / 1000;
+                } else if (battery < prevBattery) {
+                    device.status.battery = Math.floor(battery * 10 + prevBattery * 990) / 1000;
                 }
             }
+        }
+    }
+
+    /**
+     * Replaces non-word characters in obj.name with underscores and saves the
+     * original value to obj.name_org. Does nothing when obj.name is falsy.
+     *
+     * @param {{ name?: string, name_org?: string }} obj the object whose name to normalize
+     */
+    _normalizeName(obj) {
+        if (obj.name) {
+            obj.name_org = obj.name;
+            obj.name = obj.name_org.replace(/\W/gi, '_');
         }
     }
 
@@ -5286,38 +5233,20 @@ class Sureflap extends utils.Adapter {
      * removes whitespaces and special characters from household names
      */
     normalizeHouseholdNames() {
-        const reg = /\W/gi;
-        const rep = '_';
-
         this.log.silly(`normalizing household names`);
-
-        for (let h = 0; h < this.households.length; h++) {
-            if (this.households[h].name) {
-                this.households[h].name_org = this.households[h].name;
-                this.households[h].name = this.households[h].name_org.replace(reg, rep);
-            }
-        }
+        this.households.forEach(h => this._normalizeName(h));
     }
 
     /**
      * removes whitespaces and special characters from device names
      */
     normalizeDeviceNames() {
-        const reg = /\W/gi;
-        const rep = '_';
-
         this.log.silly(`normalizing device names`);
-
-        for (let h = 0; h < this.households.length; h++) {
-            const hid = this.households[h].id;
-            for (let d = 0; d < this.devices[hid].length; d++) {
-                if (this.devices[hid][d].name) {
-                    this.devices[hid][d].name_org = this.devices[hid][d].name;
-                    this.devices[hid][d].name = this.devices[hid][d].name_org.replace(reg, rep);
-                }
-                if (this.devices[hid][d].parent && this.devices[hid][d].parent.name) {
-                    this.devices[hid][d].parent.name_org = this.devices[hid][d].parent.name;
-                    this.devices[hid][d].parent.name = this.devices[hid][d].parent.name_org.replace(reg, rep);
+        for (const household of this.households) {
+            for (const device of this.devices[household.id]) {
+                this._normalizeName(device);
+                if (device.parent) {
+                    this._normalizeName(device.parent);
                 }
             }
         }
@@ -5327,17 +5256,8 @@ class Sureflap extends utils.Adapter {
      * removes whitespaces and special characters from pet names
      */
     normalizePetNames() {
-        const reg = /\W/gi;
-        const rep = '_';
-
         this.log.silly(`normalizing pet names`);
-
-        for (let p = 0; p < this.pets.length; p++) {
-            if (this.pets[p].name) {
-                this.pets[p].name_org = this.pets[p].name;
-                this.pets[p].name = this.pets[p].name_org.replace(reg, rep);
-            }
-        }
+        this.pets.forEach(p => this._normalizeName(p));
     }
 
     /**
@@ -5371,14 +5291,7 @@ class Sureflap extends utils.Adapter {
      * @returns true if the array contains an entry of type object, false otherwise
      */
     arrayContainsObjects(arr) {
-        if (Array.isArray(arr)) {
-            for (let i = 0; i < arr.length; i++) {
-                if (typeof arr[i] === 'object') {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return Array.isArray(arr) && arr.some(entry => typeof entry === 'object');
     }
 
     /**
@@ -5388,12 +5301,7 @@ class Sureflap extends utils.Adapter {
      * @returns {boolean} true if the json array contains curfew times, false otherwise
      */
     arrayContainsCurfewAttributes(jsonArray) {
-        for (let i = 0; i < jsonArray.length; i++) {
-            if (!this.containsCurfewAttributes(jsonArray[i])) {
-                return false;
-            }
-        }
-        return true;
+        return jsonArray.every(entry => this.containsCurfewAttributes(entry));
     }
 
     /**
@@ -5513,11 +5421,11 @@ class Sureflap extends utils.Adapter {
         const tzo = -date.getTimezoneOffset();
         const dif = tzo >= 0 ? '+' : '-';
 
-        return `${date.getFullYear()}-${this.padZero(date.getMonth() + 1)}-${this.padZero(
-            date.getDate(),
-        )}T${this.padZero(date.getHours())}:${this.padZero(date.getMinutes())}:${this.padZero(date.getSeconds())}${
-            dif
-        }${this.padZero(tzo / 60)}:${this.padZero(tzo % 60)}`;
+        return (
+            `${date.getFullYear()}-${this.padZero(date.getMonth() + 1)}-${this.padZero(date.getDate())}` +
+            `T${this.padZero(date.getHours())}:${this.padZero(date.getMinutes())}:${this.padZero(date.getSeconds())}` +
+            `${dif}${this.padZero(tzo / 60)}:${this.padZero(tzo % 60)}`
+        );
     }
 
     /**
