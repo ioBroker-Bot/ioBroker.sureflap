@@ -4488,7 +4488,7 @@ class Sureflap extends utils.Adapter {
      * @returns {boolean} true, if version is less than lessThan, false otherwise
      */
     isVersionLessThan(version, lessThan) {
-        const isInvalid = (v) => v == null || v === 'unknown' || v.split('.').length < 3;
+        const isInvalid = v => v == null || v === 'unknown' || v.split('.').length < 3;
         if (isInvalid(version) || isInvalid(lessThan) || version === lessThan) {
             return false;
         }
